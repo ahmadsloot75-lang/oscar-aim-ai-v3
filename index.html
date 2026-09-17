@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OSCAR AIM AI</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background: #080808;
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 520px;
+      background: #111;
+      border: 1px solid #292929;
+      border-radius: 22px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      text-align: center;
+      font-size: 30px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #aaa;
+      margin-bottom: 28px;
+    }
+
+    label {
+      display: block;
+      margin: 18px 0 8px;
+      font-weight: bold;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 14px;
+      background: #1b1b1b;
+      color: #ddd;
+      border: 1px solid #333;
+      border-radius: 12px;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 26px;
+      padding: 16px;
+      border: 0;
+      border-radius: 14px;
+      background: white;
+      color: black;
+      font-size: 17px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    #status {
+      text-align: center;
+      margin-top: 18px;
+      color: #aaa;
+      min-height: 24px;
+    }
+
+    #result {
+      display: none;
+      margin-top: 24px;
+      background: #181818;
+      border-radius: 16px;
+      padding: 18px;
+    }
+
+    .score {
+      font-size: 46px;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .item {
+      padding: 12px 0;
+      border-bottom: 1px solid #292929;
+    }
+
+    .item:last-child {
+      border-bottom: 0;
+    }
+
+    .error {
+      color: #ff7777;
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <h1>OSCAR AIM AI</h1>
+    <div class="subtitle">مدرب Aim شخصي لـ Free Fire</div>
+
+    <label>صورة HUD</label>
+    <input id="hud" type="file" accept="image/*">
+
+    <label>صورة الحساسية</label>
+    <input id="sensitivity" type="file" accept="image/*">
+
+    <label>لقطات من اللعب</label>
+    <input id="frames" type="file" accept="image/*" multiple>
+
+    <button id="analyze">تحليل اللاعب</button>
+
+    <div id="status"></div>
+
+    <section id="result">
+      <div class="score" id="score">--</div>
+      <div id="details"></div>
+    </section>
+  </main>
+
+<script>
+const hudInput = document.getElementById("hud");
+const sensitivityInput = document.getElementById("sensitivity");
+const framesInput = document.getElementById("frames");
+const button = document.getElementById("analyze");
+const status = document.getElementById("status");
+const result = document.getElementById("result");
+const score = document.getElementById("score");
+const details = document.getElementById("details");
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+button.addEventListener("click", async () => {
+  result.style.display = "none";
+  status.className = "";
+  status.textContent = "جاري تحليل اللاعب...";
+  button.disabled = true;
+
+  try {
+    if (!hudInput.files[0] || !sensitivityInput.files[0] || !framesInput.files.length) {
+      throw new Error("ارفع صورة HUD وصورة الحساسية ولقطة لعب واحدة على الأقل.");
+    }
+
+    const hud = await fileToDataURL(hudInput.files[0]);
+    const sensitivity = await fileToDataURL(sensitivityInput.files[0]);
+
+    const frames = [];
+    for (const file of framesInput.files) {
+      frames.push(await fileToDataURL(file));
+    }
+
+    const response = await fetch("/.netlify/functions/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        device: "iPhone",
+        hud,
+        sensitivity,
+        frames
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "فشل التحليل.");
+    }
+
+    const analysis = data.analysis;
+
+    score.textContent = `${analysis.aim_score}/100`;
+
+    details.innerHTML = `
+      <div class="item"><strong>HUD:</strong> ${analysis.hud_score}/100</div>
+      <div class="item"><strong>Drag Control:</strong> ${analysis.drag_control}/100</div>
+      <div class="item"><strong>Movement:</strong> ${analysis.movement}/100</div>
+      <div class="item"><strong>الثقة:</strong> ${analysis.confidence}</div>
+      <div class="item"><strong>المشاكل:</strong><br>${(analysis.issues || []).join("<br>")}</div>
+      <div class="item"><strong>التوصيات:</strong><br>${(analysis.recommendations || []).map(x =>
+        `${x.title}: ${x.recommended || ""}<br>${x.reason || ""}`
+      ).join("<br><br>")}</div>
+    `;
+
+    result.style.display = "block";
+    status.textContent = "تم التحليل بنجاح.";
+
+  } catch (error) {
+    status.className = "error";
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
